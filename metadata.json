@@ -1,0 +1,6 @@
+{
+  "name": "ImmunoVerse",
+  "description": "Biomedical intelligence platform for immunology, 3D cellular exploration, molecular pathways, immune simulation, genomics, virtual lab, and scientific literature.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

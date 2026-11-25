@@ -1,0 +1,8 @@
+{
+  "appId": "com.callidusai.immunoverse",
+  "appName": "IMMUNOVERSE",
+  "webDir": "www",
+  "backgroundColor": "#050914",
+  "android": { "allowMixedContent": false },
+  "server": { "androidScheme": "https" }
+}

@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">ImmunoVerse</string>
+    <string name="cd_hero_banner">ImmunoVerse futuristic cellular banner</string>
+    <string name="cd_search">Open global search</string>
+    <string name="cd_commands">Open command palette</string>
+    <string name="cd_notifications">Open notifications</string>
+    <string name="cd_profile">Open profile and admin</string>
+    <string name="cd_bookmark">Toggle bookmark</string>
+    <string name="cd_fullscreen">Toggle fullscreen 3D exploration</string>
+    <string name="cd_back">Navigate back</string>
+    <string name="cd_export">Export and share report</string>
+    <string name="sim_disclaimer">Educational mathematical model with illustrative parameters. Not validated for clinical prediction.</string>
+    <string name="lab_disclaimer">Simulated virtual laboratory experiment for education. Does not constitute actual clinical or laboratory testing.</string>
+    <string name="ai_disclaimer">AI responses combine curated textbook knowledge, uploaded files, and live Europe PMC/Crossref lookups. Verify critical findings independently.</string>
+</resources>

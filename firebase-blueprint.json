@@ -1,0 +1,190 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated ImmunoVerse researcher or student profile and workspace preferences.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the owner." },
+        "displayName": { "type": "string", "description": "Display name (1..80 chars)." },
+        "email": { "type": "string", "description": "Email address (3..120 chars)." },
+        "userCategory": {
+          "type": "string",
+          "enum": ["Student", "Researcher", "Lecturer", "Laboratory scientist", "Research administrator", "Platform administrator"]
+        },
+        "reduceMotion": { "type": "boolean" },
+        "hiddenModules": { "type": "array", "description": "Up to 20 disabled module keys." },
+        "dashboardWidgets": { "type": "array", "description": "Up to 15 dashboard widget keys." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Client sends FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Client sends FieldValue.serverTimestamp()." }
+      },
+      "required": ["userId", "displayName", "email", "userCategory", "reduceMotion", "createdAt", "updatedAt"]
+    },
+    "Bookmark": {
+      "title": "Bookmark",
+      "description": "User-saved biological entity, paper, lab, or disease bookmark.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "itemType": {
+          "type": "string",
+          "enum": ["cell", "organ", "molecule", "pathway", "disease", "paper", "lab", "topic"]
+        },
+        "itemId": { "type": "string" },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "meta": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "itemType", "itemId", "title", "createdAt", "updatedAt"]
+    },
+    "SavedSimulation": {
+      "title": "SavedSimulation",
+      "description": "Saved Immune Simulator ODE parameter configuration and summary peaks.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "presetKey": { "type": "string" },
+        "antigenLoad": { "type": "number" },
+        "innateGain": { "type": "number" },
+        "tCellGain": { "type": "number" },
+        "bCellGain": { "type": "number" },
+        "abClear": { "type": "number" },
+        "autoTolerance": { "type": "number" },
+        "rechallengeDay": { "type": "number" },
+        "durationDays": { "type": "number" },
+        "peakAntigen": { "type": "number" },
+        "peakCytokine": { "type": "number" },
+        "peakAntibody": { "type": "number" },
+        "peakMemory": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId", "name", "presetKey", "antigenLoad", "innateGain", "tCellGain",
+        "bCellGain", "abClear", "autoTolerance", "rechallengeDay", "durationDays",
+        "peakAntigen", "peakCytokine", "peakAntibody", "peakMemory", "createdAt", "updatedAt"
+      ]
+    },
+    "ResearchProject": {
+      "title": "ResearchProject",
+      "description": "Research workspace project container.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "folder": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "review", "archived"] },
+        "collaborators": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "description", "folder", "status", "collaborators", "createdAt", "updatedAt"]
+    },
+    "ProjectEntry": {
+      "title": "ProjectEntry",
+      "description": "Typed entry inside a research project (note, hypothesis, experiment log, milestone, reference, or dataset).",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "projectId": { "type": "string" },
+        "entryType": {
+          "type": "string",
+          "enum": ["note", "hypothesis", "exp_log", "milestone", "reference", "dataset"]
+        },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "status": { "type": "string" },
+        "tag": { "type": "string" },
+        "history": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "projectId", "entryType", "title", "content", "status", "history", "createdAt", "updatedAt"]
+    },
+    "AcademyProgress": {
+      "title": "AcademyProgress",
+      "description": "Learning Academy progress and quiz score per curriculum track.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "trackId": { "type": "string" },
+        "completedLessons": { "type": "array" },
+        "bestScore": { "type": "integer" },
+        "attempts": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "trackId", "completedLessons", "bestScore", "attempts", "createdAt", "updatedAt"]
+    },
+    "CustomContent": {
+      "title": "CustomContent",
+      "description": "User-authored custom quiz question or flashcard managed in Admin/Academy.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "contentType": { "type": "string", "enum": ["quiz", "flashcard"] },
+        "trackId": { "type": "string" },
+        "prompt": { "type": "string" },
+        "explanation": { "type": "string" },
+        "options": { "type": "array" },
+        "correctIndex": { "type": "integer" },
+        "difficulty": { "type": "string", "enum": ["Beginner", "Undergraduate", "Advanced"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "contentType", "trackId", "prompt", "explanation", "options", "correctIndex", "difficulty", "createdAt", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Telemetry, activity, and diagnostic log entry.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "level": { "type": "string", "enum": ["info", "warn", "error"] },
+        "module": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "level", "module", "message", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Authenticated user profile and workspace preferences."
+    },
+    "/users/{userId}/bookmarks/{bookmarkId}": {
+      "schema": { "$ref": "#/entities/Bookmark" },
+      "description": "Saved bookmarks for the user."
+    },
+    "/users/{userId}/simulations/{simId}": {
+      "schema": { "$ref": "#/entities/SavedSimulation" },
+      "description": "Saved Immune Simulator configurations and peak summaries."
+    },
+    "/users/{userId}/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/ResearchProject" },
+      "description": "User's research workspace projects."
+    },
+    "/users/{userId}/projects/{projectId}/entries/{entryId}": {
+      "schema": { "$ref": "#/entities/ProjectEntry" },
+      "description": "Notes, hypotheses, logs, timelines, references, and datasets inside a project."
+    },
+    "/users/{userId}/academyProgress/{trackId}": {
+      "schema": { "$ref": "#/entities/AcademyProgress" },
+      "description": "Learning progress per Academy track."
+    },
+    "/users/{userId}/customContent/{contentId}": {
+      "schema": { "$ref": "#/entities/CustomContent" },
+      "description": "User-created quiz questions and flashcards."
+    },
+    "/users/{userId}/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "User activity and error audit logs."
+    }
+  }
+}

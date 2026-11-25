@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0" />
+<title>ImmunoVerse D3 Genomic Strain Comparison</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<style>
+  :root {
+    --bg: #0b1120;
+    --card: #11192e;
+    --border: #243356;
+    --text: #e6eefc;
+    --muted: #8ea3c7;
+    --cyan: #22e5ff;
+    --violet: #8b6bff;
+    --green: #3ddc97;
+    --amber: #ffc857;
+    --pink: #e04fb0;
+    --red: #ff5d73;
+  }
+  * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  body { margin: 0; padding: 10px; background: var(--bg); color: var(--text); }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px;
+    margin-bottom: 10px;
+  }
+  .hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .title { font-size: 13px; font-weight: 700; color: var(--cyan); }
+  .badge { font-size: 10px; padding: 2px 7px; border-radius: 99px; background: rgba(34,229,255,0.12); border: 1px solid rgba(34,229,255,0.4); color: var(--cyan); }
+  .sub { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+  svg { width: 100%; display: block; overflow: visible; }
+  .tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: rgba(9, 14, 28, 0.96);
+    border: 1px solid var(--cyan);
+    color: var(--text);
+    padding: 6px 9px;
+    border-radius: 8px;
+    font-size: 11px;
+    z-index: 999;
+    display: none;
+    max-width: 240px;
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; font-size: 10px; color: var(--muted); }
+  .leg-item { display: flex; align-items: center; gap: 4px; }
+  .leg-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="tooltip" id="tip"></div>
+
+<div class="card">
+  <div class="hdr">
+    <div class="title" id="viz-title">D3.js Strain Mutation Lollipop &amp; Domain Map</div>
+    <span class="badge" id="d3-status">D3.js v7</span>
+  </div>
+  <div class="sub" id="viz-sub">Tap any mutation stem or functional domain to inspect variant patterns across strains.</div>
+  <div id="lollipop-chart"></div>
+  <div class="legend" id="strain-legend"></div>
+</div>
+
+<div class="card">
+  <div class="hdr">
+    <div class="title">D3 Sliding-Window Nucleotide Diversity (π) &amp; GC%</div>
+    <span class="badge">Sequence Patterns</span>
+  </div>
+  <div class="sub">Hypervariable peaks identify antigenic escape hotspots vs conserved therapeutic targets.</div>
+  <div id="pattern-chart"></div>
+</div>
+
+<div class="card">
+  <div class="hdr">
+    <div class="title">D3 Pairwise Strain Divergence Matrix (% Identity &amp; SNPs)</div>
+    <span class="badge">Strain Comparison</span>
+  </div>
+  <div class="sub">Tap any cell to inspect exact nucleotide distance &amp; shared mutations.</div>
+  <div id="heatmap-chart"></div>
+</div>
+
+<script>
+const STRAIN_PALETTE = ['#22e5ff', '#ffc857', '#e04fb0', '#3ddc97', '#8b6bff', '#ff5d73'];
+
+function showTip(evt, html) {
+  const tip = document.getElementById('tip');
+  tip.innerHTML = html;
+  tip.style.display = 'block';
+  const x = Math.min(window.innerWidth - 250, Math.max(8, (evt.clientX || 120) + 10));
+  const y = Math.min(window.innerHeight - 90, Math.max(8, (evt.clientY || 120) - 28));
+  tip.style.left = x + 'px';
+  tip.style.top = y + 'px';
+}
+function hideTip() {
+  document.getElementById('tip').style.display = 'none';
+}
+
+function renderWithD3(payload) {
+  const statusEl = document.getElementById('d3-status');
+  const hasD3 = typeof window.d3 !== 'undefined';
+  statusEl.textContent = hasD3 ? 'D3.js v7 Live' : 'SVG Engine';
+
+  document.getElementById('viz-title').textContent = payload.title || 'Genomic Strain Comparison';
+  document.getElementById('viz-sub').textContent = payload.subtitle || 'Tap markers for variant details';
+
+  const strains = payload.strains || [];
+  const domains = payload.domains || [];
+  const mutations = payload.mutations || [];
+  const windows = payload.windows || [];
+  const matrix = payload.matrix || [];
+  const seqLen = payload.genomeLength || 1000;
+
+  // Legend
+  const leg = document.getElementById('strain-legend');
+  leg.innerHTML = '';
+  strains.forEach((s, i) => {
+    const item = document.createElement('div');
+    item.className = 'leg-item';
+    item.innerHTML = `<span class="leg-dot" style="background:${STRAIN_PALETTE[i % STRAIN_PALETTE.length]}"></span><span>${s}</span>`;
+    leg.appendChild(item);
+  });
+
+  if (!hasD3) {
+    renderFallbackSvg(payload);
+    return;
+  }
+
+  // 1. D3 Lollipop & Domain Architecture Plot
+  const lolliEl = d3.select('#lollipop-chart');
+  lolliEl.selectAll('*').remove();
+  const W = Math.max(300, lolliEl.node().clientWidth || 340);
+  const H = 195;
+  const m = { top: 18, right: 14, bottom: 44, left: 28 };
+
+  const svg1 = lolliEl.append('svg')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('height', H);
+
+  const xScale = d3.scaleLinear().domain([1, seqLen]).range([m.left, W - m.right]);
+  const yScale = d3.scaleLinear().domain([0, 1.15]).range([H - m.bottom, m.top]);
+
+  // Domain track
+  const domG = svg1.append('g');
+  domG.selectAll('rect')
+    .data(domains)
+    .enter()
+    .append('rect')
+    .attr('x', d => xScale(d.start))
+    .attr('y', H - m.bottom + 8)
+    .attr('width', d => Math.max(4, xScale(d.end) - xScale(d.start)))
+    .attr('height', 14)
+    .attr('rx', 3)
+    .attr('fill', (d, i) => STRAIN_PALETTE[(i + 2) % STRAIN_PALETTE.length])
+    .attr('fill-opacity', 0.35)
+    .attr('stroke', (d, i) => STRAIN_PALETTE[(i + 2) % STRAIN_PALETTE.length])
+    .on('click', (evt, d) => showTip(evt, `<b>Domain: ${d.name}</b><br/>Pos ${d.start}–${d.end}<br/>${d.role || ''}`));
+
+  domG.selectAll('text')
+    .data(domains)
+    .enter()
+    .append('text')
+    .attr('x', d => (xScale(d.start) + xScale(d.end)) / 2)
+    .attr('y', H - m.bottom + 18)
+    .attr('text-anchor', 'middle')
+    .attr('fill', '#e6eefc')
+    .attr('font-size', '8.5px')
+    .text(d => d.name);
+
+  // X Axis
+  svg1.append('g')
+    .attr('transform', `translate(0,${H - m.bottom})`)
+    .call(d3.axisBottom(xScale).ticks(5).tickSize(3))
+    .selectAll('text,path,line')
+    .attr('stroke', '#51658f')
+    .attr('fill', '#8ea3c7')
+    .style('font-size', '8.5px');
+
+  // Lollipop stems
+  svg1.selectAll('line.stem')
+    .data(mutations)
+    .enter()
+    .append('line')
+    .attr('class', 'stem')
+    .attr('x1', d => xScale(d.pos))
+    .attr('x2', d => xScale(d.pos))
+    .attr('y1', H - m.bottom)
+    .attr('y2', d => yScale(d.impact))
+    .attr('stroke', d => STRAIN_PALETTE[d.strainIdx % STRAIN_PALETTE.length])
+    .attr('stroke-width', 1.6)
+    .attr('stroke-opacity', 0.8);
+
+  // Lollipop heads
+  svg1.selectAll('circle.node')
+    .data(mutations)
+    .enter()
+    .append('circle')
+    .attr('class', 'node')
+    .attr('cx', d => xScale(d.pos))
+    .attr('cy', d => yScale(d.impact))
+    .attr('r', d => d.isEscape ? 5.2 : 3.8)
+    .attr('fill', d => STRAIN_PALETTE[d.strainIdx % STRAIN_PALETTE.length])
+    .attr('stroke', '#0b1120')
+    .attr('stroke-width', 1.1)
+    .on('click', (evt, d) => {
+      showTip(evt, `<b>${d.label}</b> (${d.strain})<br/>Position: ${d.pos} • ${d.type}<br/>Effect: ${d.note}`);
+    });
+
+  // 2. D3 Sliding-Window Diversity & GC% Area/Line Chart
+  const patEl = d3.select('#pattern-chart');
+  patEl.selectAll('*').remove();
+  const H2 = 155;
+  const svg2 = patEl.append('svg').attr('viewBox', `0 0 ${W} ${H2}`).attr('height', H2);
+  const x2 = d3.scaleLinear().domain([1, seqLen]).range([m.left, W - m.right]);
+  const y2 = d3.scaleLinear().domain([0, 100]).range([H2 - 24, 14]);
+
+  const areaPi = d3.area()
+    .x(d => x2(d.pos))
+    .y0(H2 - 24)
+    .y1(d => y2(Math.min(100, d.diversity * 100)))
+    .curve(d3.curveMonotoneX);
+
+  const lineGc = d3.line()
+    .x(d => x2(d.pos))
+    .y(d => y2(d.gcPct))
+    .curve(d3.curveMonotoneX);
+
+  svg2.append('path')
+    .datum(windows)
+    .attr('fill', 'rgba(224,79,176,0.22)')
+    .attr('stroke', '#e04fb0')
+    .attr('stroke-width', 2)
+    .attr('d', areaPi);
+
+  svg2.append('path')
+    .datum(windows)
+    .attr('fill', 'none')
+    .attr('stroke', '#22e5ff')
+    .attr('stroke-width', 2)
+    .attr('d', lineGc);
+
+  svg2.append('g')
+    .attr('transform', `translate(0,${H2 - 24})`)
+    .call(d3.axisBottom(x2).ticks(5).tickSize(3))
+    .selectAll('text,path,line')
+    .attr('stroke', '#51658f')
+    .attr('fill', '#8ea3c7')
+    .style('font-size', '8.5px');
+
+  svg2.append('g')
+    .attr('transform', `translate(${m.left},0)`)
+    .call(d3.axisLeft(y2).ticks(4).tickSize(3))
+    .selectAll('text,path,line')
+    .attr('stroke', '#51658f')
+    .attr('fill', '#8ea3c7')
+    .style('font-size', '8.5px');
+
+  svg2.append('text').attr('x', m.left + 6).attr('y', 14).attr('fill', '#e04fb0').attr('font-size', '9.5px').text('■ Diversity (π x100)');
+  svg2.append('text').attr('x', m.left + 115).attr('y', 14).attr('fill', '#22e5ff').attr('font-size', '9.5px').text('— GC% Window');
+
+  // 3. D3 Pairwise Strain Divergence Matrix Heatmap
+  const hmEl = d3.select('#heatmap-chart');
+  hmEl.selectAll('*').remove();
+  const n = Math.max(1, strains.length);
+  const cellSize = Math.min(54, Math.floor((W - 95) / n));
+  const H3 = n * cellSize + 48;
+  const svg3 = hmEl.append('svg').attr('viewBox', `0 0 ${W} ${H3}`).attr('height', H3);
+  const x3 = d3.scaleBand().domain(strains).range([88, 88 + n * cellSize]).padding(0.08);
+  const y3 = d3.scaleBand().domain(strains).range([24, 24 + n * cellSize]).padding(0.08);
+  const colorScale = d3.scaleLinear().domain([60, 88, 100]).range(['#ff5d73', '#ffc857', '#3ddc97']);
+
+  svg3.selectAll('rect.cell')
+    .data(matrix)
+    .enter()
+    .append('rect')
+    .attr('x', d => x3(d.col))
+    .attr('y', d => y3(d.row))
+    .attr('width', x3.bandwidth())
+    .attr('height', y3.bandwidth())
+    .attr('rx', 4)
+    .attr('fill', d => colorScale(d.identityPct))
+    .attr('fill-opacity', 0.85)
+    .on('click', (evt, d) => showTip(evt, `<b>${d.row} vs ${d.col}</b><br/>Identity: ${d.identityPct.toFixed(1)}%<br/>SNPs: ${d.snps}`));
+
+  svg3.selectAll('text.cellval')
+    .data(matrix)
+    .enter()
+    .append('text')
+    .attr('x', d => x3(d.col) + x3.bandwidth() / 2)
+    .attr('y', d => y3(d.row) + y3.bandwidth() / 2 + 3)
+    .attr('text-anchor', 'middle')
+    .attr('fill', '#08101c')
+    .attr('font-weight', '700')
+    .attr('font-size', '9px')
+    .text(d => `${d.identityPct.toFixed(0)}%`);
+
+  svg3.selectAll('text.rowlbl')
+    .data(strains)
+    .enter()
+    .append('text')
+    .attr('x', 82)
+    .attr('y', d => y3(d) + y3.bandwidth() / 2 + 3)
+    .attr('text-anchor', 'end')
+    .attr('fill', '#e6eefc')
+    .attr('font-size', '9px')
+    .text(d => d.slice(0, 12));
+
+  svg3.selectAll('text.collbl')
+    .data(strains)
+    .enter()
+    .append('text')
+    .attr('x', d => x3(d) + x3.bandwidth() / 2)
+    .attr('y', 16)
+    .attr('text-anchor', 'middle')
+    .attr('fill', '#8ea3c7')
+    .attr('font-size', '8.5px')
+    .text(d => d.slice(0, 8));
+}
+
+function renderFallbackSvg(payload) {
+  const lolliEl = document.getElementById('lollipop-chart');
+  const mutations = payload.mutations || [];
+  const seqLen = payload.genomeLength || 1000;
+  let items = mutations.map(d => {
+    const x = 20 + (d.pos / seqLen) * 280;
+    const y = 135 - d.impact * 95;
+    const col = STRAIN_PALETTE[d.strainIdx % STRAIN_PALETTE.length];
+    return `<line x1="${x}" y1="135" x2="${x}" y2="${y}" stroke="${col}" stroke-width="1.5"/>` +
+           `<circle cx="${x}" cy="${y}" r="4" fill="${col}"/>`;
+  }).join('');
+  lolliEl.innerHTML = `<svg viewBox="0 0 320 155" height="155">${items}<line x1="20" y1="135" x2="300" y2="135" stroke="#51658f"/></svg>`;
+}
+
+window.renderGenomicsViz = function(jsonPayload) {
+  try {
+    const data = typeof jsonPayload === 'string' ? JSON.parse(jsonPayload) : jsonPayload;
+    renderWithD3(data);
+  } catch (e) {
+    console.error(e);
+  }
+};
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('circle, rect')) hideTip();
+});
+</script>
+</body>
+</html>

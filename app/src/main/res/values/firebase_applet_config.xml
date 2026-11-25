@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<resources>
+    <string name="firestore_database_id" translatable="false">ai-studio-android-immunove-6024bf8e-4bb3-4394-b305-510e47067770</string>
+    <string name="recaptcha_site_key" translatable="false">6LeC1ywuAAAAAAioGPj0Ide4fNDZqQYr36vLOU_d</string>
+</resources>

@@ -1,0 +1,296 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Global helpers
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isStr(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isBoundedStrList(arr, maxLen) {
+      return arr is list && arr.size() <= maxLen && (arr.size() == 0 || arr[0] is string);
+    }
+
+    function isValidTs(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    // 3. Entity Validators (called on both create and update)
+    function isValidUserProfile(data, userId) {
+      return data.userId == userId &&
+        isStr(data.displayName, 1, 80) &&
+        isStr(data.email, 3, 120) &&
+        data.userCategory in ['Student', 'Researcher', 'Lecturer', 'Laboratory scientist', 'Research administrator', 'Platform administrator'] &&
+        data.reduceMotion is bool &&
+        (!('hiddenModules' in data) || isBoundedStrList(data.hiddenModules, 20)) &&
+        (!('dashboardWidgets' in data) || isBoundedStrList(data.dashboardWidgets, 15));
+    }
+
+    function isValidBookmark(data, userId) {
+      return data.userId == userId &&
+        data.itemType in ['cell', 'organ', 'molecule', 'pathway', 'disease', 'paper', 'lab', 'topic'] &&
+        isStr(data.itemId, 1, 128) &&
+        isStr(data.title, 1, 200) &&
+        (!('subtitle' in data) || isStr(data.subtitle, 0, 300)) &&
+        (!('meta' in data) || isStr(data.meta, 0, 500));
+    }
+
+    function isValidSimulation(data, userId) {
+      return data.userId == userId &&
+        isStr(data.name, 1, 100) &&
+        isStr(data.presetKey, 1, 40) &&
+        data.antigenLoad is number && data.antigenLoad >= 0 && data.antigenLoad <= 10 &&
+        data.innateGain is number && data.innateGain >= 0 && data.innateGain <= 5 &&
+        data.tCellGain is number && data.tCellGain >= 0 && data.tCellGain <= 5 &&
+        data.bCellGain is number && data.bCellGain >= 0 && data.bCellGain <= 5 &&
+        data.abClear is number && data.abClear >= 0 && data.abClear <= 5 &&
+        data.autoTolerance is number && data.autoTolerance >= 0 && data.autoTolerance <= 5 &&
+        data.rechallengeDay is number && data.rechallengeDay >= 0 && data.rechallengeDay <= 90 &&
+        data.durationDays is number && data.durationDays >= 5 && data.durationDays <= 90 &&
+        data.peakAntigen is number && data.peakAntigen >= 0 &&
+        data.peakCytokine is number && data.peakCytokine >= 0 &&
+        data.peakAntibody is number && data.peakAntibody >= 0 &&
+        data.peakMemory is number && data.peakMemory >= 0;
+    }
+
+    function isValidProject(data, userId) {
+      return data.userId == userId &&
+        isStr(data.name, 1, 120) &&
+        isStr(data.description, 0, 1000) &&
+        isStr(data.folder, 1, 80) &&
+        data.status in ['active', 'review', 'archived'] &&
+        isBoundedStrList(data.collaborators, 20);
+    }
+
+    function isValidProjectEntry(data, userId, projectId) {
+      return data.userId == userId &&
+        data.projectId == projectId &&
+        data.entryType in ['note', 'hypothesis', 'exp_log', 'milestone', 'reference', 'dataset'] &&
+        isStr(data.title, 1, 200) &&
+        isStr(data.content, 0, 25000) &&
+        isStr(data.status, 1, 40) &&
+        (!('tag' in data) || isStr(data.tag, 0, 80)) &&
+        isBoundedStrList(data.history, 15);
+    }
+
+    function isValidAcademyProgress(data, userId, trackId) {
+      return data.userId == userId &&
+        data.trackId == trackId &&
+        isBoundedStrList(data.completedLessons, 30) &&
+        data.bestScore is int && data.bestScore >= 0 && data.bestScore <= 100 &&
+        data.attempts is int && data.attempts >= 0 && data.attempts <= 10000;
+    }
+
+    function isValidCustomContent(data, userId) {
+      return data.userId == userId &&
+        data.contentType in ['quiz', 'flashcard'] &&
+        isStr(data.trackId, 1, 60) &&
+        isStr(data.prompt, 1, 500) &&
+        isStr(data.explanation, 0, 1500) &&
+        isBoundedStrList(data.options, 6) &&
+        data.correctIndex is int && data.correctIndex >= 0 && data.correctIndex <= 5 &&
+        data.difficulty in ['Beginner', 'Undergraduate', 'Advanced'];
+    }
+
+    function isValidAuditLog(data, userId) {
+      return data.userId == userId &&
+        data.level in ['info', 'warn', 'error'] &&
+        isStr(data.module, 1, 60) &&
+        isStr(data.message, 1, 500);
+    }
+
+    // 4. Collection Rules
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) &&
+        isValidId(userId) &&
+        incoming().keys().hasAll(['userId', 'displayName', 'email', 'userCategory', 'reduceMotion', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'displayName', 'email', 'userCategory', 'reduceMotion', 'hiddenModules', 'dashboardWidgets', 'createdAt', 'updatedAt']) &&
+        isValidTs(incoming().createdAt) &&
+        isValidTs(incoming().updatedAt) &&
+        isValidUserProfile(incoming(), userId);
+      allow update: if isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        isValidTs(incoming().updatedAt) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'userCategory', 'reduceMotion', 'hiddenModules', 'dashboardWidgets', 'updatedAt']);
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /bookmarks/{bookmarkId} {
+        allow get: if isOwner(userId) && isValidId(bookmarkId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidId(bookmarkId) &&
+          incoming().keys().hasAll(['userId', 'itemType', 'itemId', 'title', 'createdAt', 'updatedAt']) &&
+          incoming().keys().hasOnly(['userId', 'itemType', 'itemId', 'title', 'subtitle', 'meta', 'createdAt', 'updatedAt']) &&
+          isValidTs(incoming().createdAt) &&
+          isValidTs(incoming().updatedAt) &&
+          isValidBookmark(incoming(), userId);
+        allow update: if isOwner(userId) &&
+          isValidId(bookmarkId) &&
+          isValidBookmark(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          isValidTs(incoming().updatedAt) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'subtitle', 'meta', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(bookmarkId);
+      }
+
+      match /simulations/{simId} {
+        allow get: if isOwner(userId) && isValidId(simId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidId(simId) &&
+          incoming().keys().hasAll([
+            'userId', 'name', 'presetKey', 'antigenLoad', 'innateGain', 'tCellGain',
+            'bCellGain', 'abClear', 'autoTolerance', 'rechallengeDay', 'durationDays',
+            'peakAntigen', 'peakCytokine', 'peakAntibody', 'peakMemory', 'createdAt', 'updatedAt'
+          ]) &&
+          incoming().keys().hasOnly([
+            'userId', 'name', 'presetKey', 'antigenLoad', 'innateGain', 'tCellGain',
+            'bCellGain', 'abClear', 'autoTolerance', 'rechallengeDay', 'durationDays',
+            'peakAntigen', 'peakCytokine', 'peakAntibody', 'peakMemory', 'createdAt', 'updatedAt'
+          ]) &&
+          isValidTs(incoming().createdAt) &&
+          isValidTs(incoming().updatedAt) &&
+          isValidSimulation(incoming(), userId);
+        allow update: if isOwner(userId) &&
+          isValidId(simId) &&
+          isValidSimulation(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          isValidTs(incoming().updatedAt) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(simId);
+      }
+
+      match /projects/{projectId} {
+        allow get: if isOwner(userId) && isValidId(projectId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidId(projectId) &&
+          incoming().keys().hasAll(['userId', 'name', 'description', 'folder', 'status', 'collaborators', 'createdAt', 'updatedAt']) &&
+          incoming().keys().hasOnly(['userId', 'name', 'description', 'folder', 'status', 'collaborators', 'createdAt', 'updatedAt']) &&
+          isValidTs(incoming().createdAt) &&
+          isValidTs(incoming().updatedAt) &&
+          isValidProject(incoming(), userId);
+        allow update: if isOwner(userId) &&
+          isValidId(projectId) &&
+          isValidProject(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          isValidTs(incoming().updatedAt) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'folder', 'status', 'collaborators', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(projectId);
+
+        match /entries/{entryId} {
+          allow get: if isOwner(userId) && isValidId(projectId) && isValidId(entryId);
+          allow list: if isOwner(userId) && isValidId(projectId);
+          allow create: if isOwner(userId) &&
+            isValidId(projectId) &&
+            isValidId(entryId) &&
+            incoming().keys().hasAll(['userId', 'projectId', 'entryType', 'title', 'content', 'status', 'history', 'createdAt', 'updatedAt']) &&
+            incoming().keys().hasOnly(['userId', 'projectId', 'entryType', 'title', 'content', 'status', 'tag', 'history', 'createdAt', 'updatedAt']) &&
+            isValidTs(incoming().createdAt) &&
+            isValidTs(incoming().updatedAt) &&
+            isValidProjectEntry(incoming(), userId, projectId) &&
+            exists(/databases/$(database)/documents/users/$(userId)/projects/$(projectId));
+          allow update: if isOwner(userId) &&
+            isValidId(projectId) &&
+            isValidId(entryId) &&
+            isValidProjectEntry(incoming(), userId, projectId) &&
+            incoming().userId == existing().userId &&
+            incoming().projectId == existing().projectId &&
+            incoming().entryType == existing().entryType &&
+            incoming().createdAt == existing().createdAt &&
+            isValidTs(incoming().updatedAt) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'status', 'tag', 'history', 'updatedAt']);
+          allow delete: if isOwner(userId) && isValidId(projectId) && isValidId(entryId);
+        }
+      }
+
+      match /academyProgress/{trackId} {
+        allow get: if isOwner(userId) && isValidId(trackId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidId(trackId) &&
+          incoming().keys().hasAll(['userId', 'trackId', 'completedLessons', 'bestScore', 'attempts', 'createdAt', 'updatedAt']) &&
+          incoming().keys().hasOnly(['userId', 'trackId', 'completedLessons', 'bestScore', 'attempts', 'createdAt', 'updatedAt']) &&
+          isValidTs(incoming().createdAt) &&
+          isValidTs(incoming().updatedAt) &&
+          isValidAcademyProgress(incoming(), userId, trackId);
+        allow update: if isOwner(userId) &&
+          isValidId(trackId) &&
+          isValidAcademyProgress(incoming(), userId, trackId) &&
+          incoming().userId == existing().userId &&
+          incoming().trackId == existing().trackId &&
+          incoming().createdAt == existing().createdAt &&
+          isValidTs(incoming().updatedAt) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['completedLessons', 'bestScore', 'attempts', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(trackId);
+      }
+
+      match /customContent/{contentId} {
+        allow get: if isOwner(userId) && isValidId(contentId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidId(contentId) &&
+          incoming().keys().hasAll(['userId', 'contentType', 'trackId', 'prompt', 'explanation', 'options', 'correctIndex', 'difficulty', 'createdAt', 'updatedAt']) &&
+          incoming().keys().hasOnly(['userId', 'contentType', 'trackId', 'prompt', 'explanation', 'options', 'correctIndex', 'difficulty', 'createdAt', 'updatedAt']) &&
+          isValidTs(incoming().createdAt) &&
+          isValidTs(incoming().updatedAt) &&
+          isValidCustomContent(incoming(), userId);
+        allow update: if isOwner(userId) &&
+          isValidId(contentId) &&
+          isValidCustomContent(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          isValidTs(incoming().updatedAt) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['prompt', 'explanation', 'options', 'correctIndex', 'difficulty', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(contentId);
+      }
+
+      match /auditLogs/{logId} {
+        allow get: if isOwner(userId) && isValidId(logId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidId(logId) &&
+          incoming().keys().hasAll(['userId', 'level', 'module', 'message', 'createdAt', 'updatedAt']) &&
+          incoming().keys().hasOnly(['userId', 'level', 'module', 'message', 'createdAt', 'updatedAt']) &&
+          isValidTs(incoming().createdAt) &&
+          isValidTs(incoming().updatedAt) &&
+          isValidAuditLog(incoming(), userId);
+        allow update: if false;
+        allow delete: if isOwner(userId) && isValidId(logId);
+      }
+    }
+  }
+}
